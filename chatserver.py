@@ -5,7 +5,7 @@ import threading
 import os
 import socket
 import sys
-from ulities.string_processing import handle_message_request, disconnect_request_string, join_chat_room, leave_chat_room_request
+from ulities.strings import handle_message_request, disconnect_request_string, join_chat_room, leave_chat_room_request
 
 
 
@@ -89,10 +89,11 @@ class ThreadedTCPHandler(SocketServer.BaseRequestHandler):
                     pass
 
             elif(disconnectString in request_string):
-                logging.info("DISCONNECT: {} has disconnected.".format(handleDisconnect(self.join_id)))
-                #handleDisconnect(request_string)
-                #print("Disconnecting")
+                logging.info("DISCONNECT: Client_ID: {} has disconnected.".format(self.join_id))
+                handleDisconnect(request_string)
+                print("Disconnecting")
                 self.client_connected=False
+
             elif(sendMessageString in request_string):
                 handle_message(request_string)
             elif( request_exists== False):
@@ -111,23 +112,24 @@ def handleJoin(request_string, request):
         chat_server.add_client_to_server(client_ip,client_port,client_name, request)
         logging.info("{} added to the server".format(client_name))
     else:
+
         logging.info("{} already exists on the server".format(client_name))
 
     client=chat_server.get_client(client_name)
-
+    chat_server.clients[client.join_id].req=request
     if not room_exists:
         #adding room to the server
         chat_server.add_room_to_server(join_room_name)
         room_ref=chat_server.get_room_ref(join_room_name)
         #adding client to the newly created room
-        client.success_join_message(join_room_name, room_ref)
+        chat_server.clients[client.join_id].success_join_message(join_room_name, room_ref)
         chat_server.chat_rooms[room_ref].join(client.join_id,client_name)
         logging.info("{} created and {} added".format(join_room_name, client_name))
         return client.join_id, room_ref
     else:
         #room exists
         room=chat_server.get_room(join_room_name)
-        client.success_join_message(join_room_name, room.ref)
+        chat_server.clients[client.join_id].success_join_message(join_room_name, room.ref)
         #make sure the client is not already a member
         if(not client.join_id in room.member_IDs):
             #add client to room
@@ -154,13 +156,13 @@ def handleLeave(request_string):
 
 def handleDisconnect(request_string):
     disconnect_string,port,client_name=disconnect_request_string(request_string)
-    client_id=chat_server.get_client(client_name)
+    client=chat_server.get_client(client_name)
+    #client.add_message("FUck yall im out")
     for room in chat_server.chat_rooms:
-        try:
-            room.leave(client_id)
-            chat_server.clients[client_id].success_left_message(room.ref)
-        except:
-            pass
+        if(client.join_id in room.member_IDs):
+            room.leave(client.join_id,client_name)
+    #chat_server.clients[client.join_id]= None
+
 
 def handle_message(request_string):
     logging.info("/n MESSAGE PROCESSING")
@@ -184,7 +186,7 @@ class client:
     def add_message(self, message):
 
         self.test+=1
-        print("New message for {}:\n{}\nThis is the {} call".format(self.name, message,self.test))
+        #print("New message for {},ID:{}:\n{}\nThis is the {} call".format(self.name,self.join_id, message,self.test))
         self.req.send(message)
 
        # if self.test==8 and self.join_id==1:
@@ -248,12 +250,13 @@ class chat_room():
     def new_message(self, sender_name, sender_id, message):
         #self.lock.acquire()
         #
-        # print("New_message:\n{}".format(message))
+        print("New_message:\n{}".format(message))
         #if(self.authenticate(sender_id)):
         if(True):
+            cleaned=message.replace('\n','')
             for recpiant_ID in self.member_IDs:
                 recpiant = chat_server.clients[recpiant_ID].get()
-                formated= "CHAT:{}\nCLIENT_NAME:{}\nMESSAGE:{}\n\n".format(self.ref, sender_name, message)
+                formated= "CHAT:{}\nCLIENT_NAME:{}\nMESSAGE:{}\n\n".format(self.ref, sender_name, cleaned)
                 recpiant.add_message(formated)
                 chat_server.clients[recpiant_ID].set(recpiant)
         else:
@@ -264,6 +267,7 @@ class chat_room():
         if(sender_id in self.member_IDs):
             self.new_message(sender_name, sender_id, message)
         else:
+            print("incorrect Id")
             chat_server.get_client(sender_name).add_message("ERROR_CODE: 5\nERROR_DESCRIPTION: Incorrect ID and Name")
         self.lock.release()
 
